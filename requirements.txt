@@ -5,3 +5,4 @@ webdriver-manager
 beautifulsoup4
 openpyxl
 schedule
+pytz
