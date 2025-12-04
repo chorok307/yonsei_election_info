@@ -13,7 +13,6 @@ from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
 # [중요] mapping_db.py가 같은 폴더에 있어야 합니다.
-# 만약 파일이 없다면 에러가 나므로, 확인해주세요.
 try:
     from mapping_db import get_commission, is_target_unit, TARGET_UNITS
 except ImportError:
@@ -32,6 +31,7 @@ def apply_custom_css():
             font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
         }
         
+        /* 메인 표 스타일 */
         table.custom-table {
             width: auto !important;
             min-width: 50%; 
@@ -64,6 +64,7 @@ def apply_custom_css():
         tr.default-row { background-color: #ffffff; }
         tr.default-row:hover { background-color: #f1f3f5; }
 
+        /* 상단 요약 표 스타일 */
         table.summary-table {
             width: 100%;
             border-collapse: collapse;
@@ -88,6 +89,7 @@ def apply_custom_css():
             color: #e11d48; 
         }
 
+        /* 컨트롤 패널 스타일 */
         .update-time-box {
             display: flex;
             align-items: center;
@@ -118,6 +120,9 @@ def apply_custom_css():
             background-color: #00254d !important;
             border-color: #00254d !important;
         }
+        div.stButton > button:active {
+            background-color: #001833 !important;
+        }
         
         div[data-testid="stMarkdownContainer"] p {
             font-weight: bold;
@@ -137,18 +142,22 @@ def apply_custom_css():
 apply_custom_css()
 
 # ==============================================================================
-# 크롤링 함수 (디버깅 강화)
+# 크롤링 함수
 # ==============================================================================
 def get_data_from_server():
     url = "https://election.yonsei.ac.kr/votes"
     
     options = webdriver.ChromeOptions()
     options.add_argument("--headless") 
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    # 드라이버 설정 (서버/로컬 자동 분기)
     driver = None
     try:
         if os.path.exists("/usr/bin/chromium") and os.path.exists("/usr/bin/chromedriver"):
@@ -163,26 +172,16 @@ def get_data_from_server():
     
     try:
         driver.get(url)
-        
-        # [디버깅] 페이지 로딩 대기
         try:
             WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "card-custom")))
             time.sleep(1)
         except:
-            st.warning("⚠️ 페이지 로딩 시간이 길어지거나 요소를 찾지 못했습니다. (계속 진행 시도)")
+            pass
 
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
         
         all_cards = soup.find_all('div', class_='card-custom')
-        
-        # [디버깅] 카드 개수 확인
-        if not all_cards:
-            st.error(f"❌ 선거 정보 카드를 하나도 찾지 못했습니다. HTML 구조가 변경되었거나 접속이 차단되었습니다.")
-            # 디버깅용: 페이지 제목이라도 찍어봄
-            st.write(f"현재 페이지 제목: {soup.title.string if soup.title else '없음'}")
-            return pd.DataFrame()
-
         data_list = []
 
         for card in all_cards:
@@ -239,8 +238,7 @@ def get_data_from_server():
                     "투표율": rate, "투표자 수": voted, "총 유권자": total, "투표 성사 잔여 인원": remaining
                 })
 
-                # [수정] 안전한 종료 조건 (이름이 정확하지 않을 수 있으므로 '포함'으로 체크)
-                if "외국인" in clean_name and "학생회" in clean_name:
+                if clean_name == "외국인 학생회":
                     break
         
         df = pd.DataFrame(data_list)
@@ -248,8 +246,7 @@ def get_data_from_server():
             df['orig_index'] = df.index
             ORDER_LIST = [
                 "중앙선거관리위원회", "총동아리연합회", "문과대학", "상경·경영대학", "이과대학",
-                "공과대학", "인공지능융합대학", 
-                "신과대학", "사회과학대학", "생명시스템대학", "음악대학",
+                "공과대학", "인공지능융합대학", "신과대학", "사회과학대학", "생명시스템대학", "음악대학",
                 "생활과학대학", "교육과학대학", "체육계열", "의과대학", "치과대학", 
                 "간호대학", "약학대학", "언더우드국제대학", "글로벌인재대학"
             ]
@@ -257,11 +254,10 @@ def get_data_from_server():
             df = df.sort_values(by=['commission_order', 'orig_index'])
             df = df.drop(columns=['orig_index', 'commission_order'])
             df.insert(0, '일련번호', range(1, len(df) + 1))
-            
         return df
 
     except Exception as e:
-        st.error(f"❌ 크롤링 및 처리 중 오류 발생: {e}")
+        st.error(f"❌ 크롤링 오류: {e}")
         return pd.DataFrame()
     finally:
         if driver:
@@ -321,13 +317,13 @@ def create_html_table(df):
 # ==============================================================================
 # 메인 화면 레이아웃
 # ==============================================================================
-if 'last_updated' not in st.session_state: st.session_state['last_updated'] = "-"
-if 'data' not in st.session_state: st.session_state['data'] = pd.DataFrame()
-
 col_header, col_summary = st.columns([2, 1.2], vertical_alignment="center")
 with col_header: st.title("🦅 연세대학교 선거 실시간 현황")
 
-# [요약 표] 데이터가 있을 때만 렌더링
+if 'data' not in st.session_state: st.session_state['data'] = pd.DataFrame()
+if 'last_updated' not in st.session_state: st.session_state['last_updated'] = "-"
+
+# 요약표 표시
 if not st.session_state['data'].empty:
     df_sum = st.session_state['data']
     if '증가' in df_sum.columns:
@@ -336,8 +332,7 @@ if not st.session_state['data'].empty:
         inc_college = df_sum[mask_college]['증가'].sum()
         mask_dept = ((df_sum['선거 단위'] != '총학생회') & (~mask_college))
         inc_dept = df_sum[mask_dept]['증가'].sum()
-
-        # Value
+        
         row_total_sa = df_sum[df_sum['선거 단위'] == '총학생회']
         rem_total = max(0, row_total_sa['투표 성사 잔여 인원'].values[0]) if not row_total_sa.empty and pd.notna(row_total_sa['투표 성사 잔여 인원'].values[0]) else 0
         
@@ -394,12 +389,15 @@ if not st.session_state['data'].empty:
 
     if sort_option == "기본순": df_valid = df_valid.sort_values(by="일련번호", ascending=True)
     elif sort_option == "투표율 높은 순": df_valid = df_valid.sort_values(by="투표율", ascending=False)
-    # ... (정렬 로직 동일)
+    elif sort_option == "투표율 낮은 순": df_valid = df_valid.sort_values(by="투표율", ascending=True)
+    elif sort_option == "투표자 많은 순": df_valid = df_valid.sort_values(by="투표자 수", ascending=False)
+    elif sort_option == "잔여 인원 적은 순": df_valid = df_valid.sort_values(by="투표 성사 잔여 인원", ascending=True)
+    elif sort_option == "가나다 순": df_valid = df_valid.sort_values(by="선거 단위", ascending=True)
 
     if not df_valid.empty:
         st.success(f"📊 현재 진행 중인 선거: {len(df_valid)}개")
         
-        # 엑셀 저장용
+        # 엑셀 저장 로직
         df_export = df_valid.copy()
         def restore_name_for_excel(name):
             skip = ["동아리연합회", "투표", "위원회", "연합회장"]
@@ -413,11 +411,8 @@ if not st.session_state['data'].empty:
         file_name = f"yonsei_vote_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         csv = df_export.to_csv(index=False).encode('utf-8-sig')
         st.download_button(label="💾 엑셀 저장", data=csv, file_name=file_name, mime='text/csv')
-        
-        # 표 출력
         st.markdown(create_html_table(df_valid), unsafe_allow_html=True)
         
-        # 공지용 텍스트 (기존 로직 유지)
         with st.expander("📋 공지용 텍스트 복사 (클릭해서 열기)", expanded=False):
             clipboard_text = ""
             ORDERED_COMMISSIONS = [
@@ -434,38 +429,53 @@ if not st.session_state['data'].empty:
 
             for comm in sorted_commissions:
                 group = df_valid[df_valid['담당 선관위'] == comm]
-...                 if group.empty: continue
-...                 for _, row in group.iterrows():
-...                     unit_name = row['선거 단위']
-...                     rate = row['투표율'] if pd.notna(row['투표율']) else 0.0
-...                     skip_keywords = ["학생회", "위원회", "투표", "동아리연합회", "연합회장"]
-...                     if any(k in unit_name for k in skip_keywords): final_name = unit_name
-...                     else: final_name = f"{unit_name} 학생회"
-...                     clipboard_text += f"{final_name} {rate:.2f}%\n"
-...                 clipboard_text += "\n" 
-...             st.info("우측 상단의 'Copy' 아이콘을 누르면 전체 내용이 복사됩니다.")
-...             st.code(clipboard_text, language="text")
-... 
-...     if not df_invalid.empty:
-...         st.markdown("---")
-...         st.subheader("📌 일부 정보 미표기 단위")
-...         st.markdown(create_html_table(df_invalid), unsafe_allow_html=True)
-... 
-... elif st.session_state['last_updated'] != "-":
-...     st.warning("데이터를 찾지 못했습니다. 다시 시도해주세요.")
-... 
-... # 자동 업데이트 (기존 로직 유지)
-... if auto_refresh:
-...     progress_text = "다음 업데이트 대기 중..."
-...     my_bar = st.progress(0, text=progress_text)
-...     for percent_complete in range(100):
-...         time.sleep(0.6)
-...         my_bar.progress(percent_complete + 1, text=f"{progress_text} ({60 - int(percent_complete * 0.6)}초)")
-...     
-...     with st.spinner('자동 업데이트 중...'):
-...         new_data = get_data_from_server()
-...         if not new_data.empty:
-...             new_data = process_new_data(new_data)
-...             st.session_state['data'] = new_data
-...             st.session_state['last_updated'] = datetime.now().strftime("%m월 %d일 %H시 %M분 %S초")
+                if group.empty: continue
+                for _, row in group.iterrows():
+                    unit_name = row['선거 단위']
+                    rate = row['투표율'] if pd.notna(row['투표율']) else 0.0
+                    skip_keywords = ["학생회", "위원회", "투표", "동아리연합회", "연합회장"]
+                    if any(k in unit_name for k in skip_keywords): final_name = unit_name
+                    else: final_name = f"{unit_name} 학생회"
+                    clipboard_text += f"{final_name} {rate:.2f}%\n"
+                clipboard_text += "\n" 
+            st.info("우측 상단의 'Copy' 아이콘을 누르면 전체 내용이 복사됩니다.")
+            st.code(clipboard_text, language="text")
 
+    if not df_invalid.empty:
+        st.markdown("---")
+        st.subheader("📌 일부 정보 미표기 단위")
+        def safe_format_int(val):
+            try: return f"{int(val):,}"
+            except: return val
+        def safe_format_float(val):
+            try: return f"{float(val):.2f}%"
+            except: return val
+
+        df_show = df_invalid.fillna("-")
+        df_show['투표자 수'] = df_show['투표자 수'].apply(lambda x: safe_format_int(x) if x != '-' else '-')
+        df_show['총 유권자'] = df_show['총 유권자'].apply(lambda x: safe_format_int(x) if x != '-' else '-')
+        df_show['투표 성사 잔여 인원'] = df_show['투표 성사 잔여 인원'].apply(lambda x: safe_format_int(x) if x != '-' else '-')
+        df_show['투표율'] = df_show['투표율'].apply(lambda x: safe_format_float(x) if x != '-' else '-')
+
+        styler_invalid = df_show.style.set_properties(**{'text-align': 'center'}).set_table_styles(
+            [{'selector': 'th', 'props': [('text-align', 'center')]}]
+        )
+        st.dataframe(styler_invalid, use_container_width=True, hide_index=True)
+
+elif st.session_state['last_updated'] != "-":
+    st.warning("데이터를 찾지 못했습니다. 다시 시도해주세요.")
+
+if auto_refresh:
+    progress_text = "다음 업데이트 대기 중..."
+    my_bar = st.progress(0, text=progress_text)
+    for percent_complete in range(100):
+        time.sleep(0.6)
+        my_bar.progress(percent_complete + 1, text=f"{progress_text} ({60 - int(percent_complete * 0.6)}초)")
+    
+    with st.spinner('자동 업데이트 중...'):
+        new_data = get_data_from_server()
+        if not new_data.empty:
+            new_data = process_new_data(new_data)
+            st.session_state['data'] = new_data
+            st.session_state['last_updated'] = datetime.now().strftime("%m월 %d일 %H시 %M분 %S초")
+            st.rerun()
