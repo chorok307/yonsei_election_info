@@ -4,6 +4,7 @@ import time
 import re
 import os
 import traceback
+import pytz # [추가] 시간대 처리를 위한 라이브러리
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -32,6 +33,7 @@ def apply_custom_css():
             font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
         }
         
+        /* 메인 표 스타일 */
         table.custom-table {
             width: auto !important;
             min-width: 50%; 
@@ -64,6 +66,7 @@ def apply_custom_css():
         tr.default-row { background-color: #ffffff; }
         tr.default-row:hover { background-color: #f1f3f5; }
 
+        /* 상단 요약 표 스타일 */
         table.summary-table {
             width: 100%;
             border-collapse: collapse;
@@ -88,6 +91,7 @@ def apply_custom_css():
             color: #e11d48; 
         }
 
+        /* 컨트롤 패널 스타일 */
         .update-time-box {
             display: flex;
             align-items: center;
@@ -132,7 +136,7 @@ def apply_custom_css():
 apply_custom_css()
 
 # ==============================================================================
-# 크롤링 함수
+# 크롤링 함수 (디버깅 로직 추가)
 # ==============================================================================
 def get_data_from_server(debug_container=None):
     url = "https://election.yonsei.ac.kr/votes"
@@ -147,26 +151,9 @@ def get_data_from_server(debug_container=None):
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    # 디버깅 로그 함수
-    options = webdriver.ChromeOptions()
-    
-    # [1] 서버용 기본 옵션
-    options.add_argument("--headless") 
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    
-    # [2] 봇 탐지 우회
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
-    # [3] 한국어 강제 설정 (이 부분이 핵심입니다!)
-    options.add_argument("--lang=ko_KR") 
-    prefs = {
-        "intl.accept_languages": "ko,ko_KR"
-    }
+    # [추가] 한국어 설정
+    options.add_argument("--lang=ko_KR")
+    prefs = {"intl.accept_languages": "ko,ko_KR"}
     options.add_experimental_option("prefs", prefs)
 
     # 디버깅 로그 함수
@@ -177,75 +164,78 @@ def get_data_from_server(debug_container=None):
 
     driver = None
     try:
+        # 드라이버 실행 시도
         if os.path.exists("/usr/bin/chromium") and os.path.exists("/usr/bin/chromedriver"):
-            log("서버 환경(Linux) 감지됨")
+            log("서버 환경(Linux) 감지됨. /usr/bin/chromedriver 사용")
             options.binary_location = "/usr/bin/chromium"
             service = Service("/usr/bin/chromedriver")
             driver = webdriver.Chrome(service=service, options=options)
         else:
-            log("로컬 환경 감지됨")
+            log("로컬 환경(Windows/Mac) 감지됨. WebDriver Manager 사용")
             driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     except Exception as e:
-        st.error(f"❌ 브라우저 실행 실패: {e}")
+        st.error(f"❌ 브라우저 실행 실패! 드라이버 설정을 확인하세요.\n{e}")
+        st.code(traceback.format_exc())
         return pd.DataFrame()
     
     try:
-        log(f"사이트 접속: {url}")
+        log(f"사이트 접속 시도: {url}")
         driver.get(url)
+        
         try:
             WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "card-custom")))
+            log("✅ 요소('card-custom') 로딩 감지 성공!")
             time.sleep(1)
         except:
-            log("⚠️ 로딩 타임아웃 (계속 진행)")
+            log("⚠️ 타임아웃: 'card-custom' 요소를 찾지 못했습니다. (로딩이 느리거나 구조가 다름)")
             pass
 
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
         
         all_cards = soup.find_all('div', class_='card-custom')
-        log(f"🔍 발견된 카드 수: {len(all_cards)}개")
+        log(f"🔍 발견된 카드(div.card-custom) 개수: {len(all_cards)}개")
         
         if not all_cards:
-            st.error("❌ 카드를 찾지 못했습니다. (페이지 구조 변경 의심)")
+            st.error("❌ 선거 정보 카드를 하나도 찾지 못했습니다! (빈 페이지거나 차단됨)")
+            st.warning(f"현재 페이지 제목: {driver.title}")
             return pd.DataFrame()
 
         data_list = []
+        log("데이터 파싱 시작...")
 
-        for card in all_cards:
-            # 제목(h4)이 없으면 패스
+        for i, card in enumerate(all_cards):
             if not card.find('h4'): continue
 
-            # [수정] '진행중' 섹션인지 확인하는 조건문 삭제!
-            # 무조건 데이터를 긁어오고, 나중에 사람이 판단하게 함
-            
-            raw_name = card.find('h4').get_text(strip=True)
-            
-            # 이름 정제
-            clean_name = re.sub(r"연세대학교|제\d+대", "", raw_name).strip()
-            
-            if "총학생회" in clean_name: clean_name = "총학생회"
-            elif "총동아리연합회" in clean_name: clean_name = "총동아리연합회"
-            elif "외국인" in clean_name: clean_name = "외국인 학생회"
-            elif "아동" in clean_name and "가족" in clean_name: clean_name = "아동가족학과"
-            elif "상경·경영대학" in clean_name:
-                if "총투표" in clean_name: pass 
-                else: clean_name = "상경·경영대학" 
-            else:
-                remove_list = ["이과대학", "2026년도", "2026학년도", "선거운동본부", "학생회 선거", "학생회", "선거"]
-                for word in remove_list: clean_name = clean_name.replace(word, "")
-            clean_name = " ".join(clean_name.split())
-            
-            commission_name = get_commission(clean_name)
-            if commission_name == "기타/공통": commission_name = get_commission(raw_name)
+            prev_header = card.find_previous('h3')
+            if prev_header and "진행중" in prev_header.get_text(strip=True):
+                raw_name = card.find('h4').get_text(strip=True)
+                
+                clean_name = re.sub(r"연세대학교|제\d+대", "", raw_name).strip()
+                if "총학생회" in clean_name: clean_name = "총학생회"
+                elif "총동아리연합회" in clean_name: clean_name = "총동아리연합회"
+                elif "외국인" in clean_name: clean_name = "외국인 학생회"
+                elif "아동" in clean_name and "가족" in clean_name: clean_name = "아동가족학과"
+                elif "상경·경영대학" in clean_name:
+                    if "총투표" in clean_name: pass 
+                    else: clean_name = "상경·경영대학" 
+                else:
+                    remove_list = ["이과대학", "2026년도", "2026학년도", "선거운동본부", "학생회 선거", "학생회", "선거"]
+                    for word in remove_list: clean_name = clean_name.replace(word, "")
+                clean_name = " ".join(clean_name.split())
+                
+                commission_name = get_commission(clean_name)
+                if commission_name == "기타/공통": commission_name = get_commission(raw_name)
 
-            rate, voted, total, remaining = None, None, None, None
-            labels = card.find_all('p', class_='text-black-50')
-            
-            # 데이터 추출
-            for label in labels:
-                text = label.get_text(strip=True)
-                val_tag = label.find_next_sibling('h5')
-                if val_tag:
+                rate, voted, total, remaining = None, None, None, None
+                
+                # [하이브리드 파싱] 1단계: 태그 구조
+                labels = card.find_all('p') # 모든 p 태그 검색 (클래스 무관)
+                for label in labels:
+                    text = label.get_text(strip=True)
+                    val_tag = label.find_next_sibling('h5')
+                    if not val_tag: continue
+                    
                     val = val_tag.get_text(strip=True)
                     if "투표율" in text:
                         if '(' in val:
@@ -263,18 +253,32 @@ def get_data_from_server(debug_container=None):
                     elif "투표 성사" in text or "남은 투표" in text:
                         try: remaining = int(val.replace('명', '').replace(',', '').strip())
                         except: pass
-            
-            # [중요] 유권자 수나 투표율 정보가 있는 경우에만 추가 (빈 껍데기 제외)
-            if rate is not None or total is not None:
-                data_list.append({
-                    "담당 선관위": commission_name, "선거 단위": clean_name,
-                    "투표율": rate, "투표자 수": voted, "총 유권자": total, "투표 성사 잔여 인원": remaining
-                })
+                
+                # [하이브리드 파싱] 2단계: Regex 비상망
+                if rate is None and total is None:
+                    card_text = card.get_text(" ", strip=True)
+                    rate_match = re.search(r'([\d\.]+)\s*%', card_text)
+                    if rate_match:
+                        try: rate = float(rate_match.group(1))
+                        except: pass
+                    total_match = re.search(r'총\s*유권자.*?([\d,]+)\s*명', card_text)
+                    if total_match:
+                        try: total = int(total_match.group(1).replace(',', ''))
+                        except: pass
+                    if voted is None and rate is not None and total is not None:
+                        voted = int(total * (rate / 100))
 
-            if clean_name == "외국인 학생회": break
+                # 데이터 추가 (일부 정보라도 있으면 추가)
+                if rate is not None or total is not None:
+                    data_list.append({
+                        "담당 선관위": commission_name, "선거 단위": clean_name,
+                        "투표율": rate, "투표자 수": voted, "총 유권자": total, "투표 성사 잔여 인원": remaining
+                    })
+
+                if clean_name == "외국인 학생회": break
         
-        log(f"✅ 유효 데이터 추출 완료: {len(data_list)}건")
-
+        log(f"✅ 파싱 완료: 총 {len(data_list)}건 추출됨")
+        
         df = pd.DataFrame(data_list)
         if not df.empty:
             df['orig_index'] = df.index
@@ -292,7 +296,7 @@ def get_data_from_server(debug_container=None):
         return df
 
     except Exception as e:
-        st.error(f"❌ 크롤링 중 오류 발생: {e}")
+        st.error(f"❌ 실행 중 치명적 오류 발생: {e}")
         st.code(traceback.format_exc())
         return pd.DataFrame()
     finally:
@@ -359,7 +363,6 @@ with col_header: st.title("🦅 연세대학교 선거 실시간 현황")
 if 'last_updated' not in st.session_state: st.session_state['last_updated'] = "-"
 if 'data' not in st.session_state: st.session_state['data'] = pd.DataFrame()
 
-# 사이드바 디버그
 with st.sidebar:
     show_log = st.checkbox("🐞 실시간 로그 보기", value=False)
     debug_container = st.container() if show_log else None
@@ -405,11 +408,16 @@ with col_time:
 should_fetch = manual_refresh or (auto_refresh and st.session_state['data'].empty)
 if should_fetch:
     with st.spinner('데이터를 수집 중입니다...'):
-        new_data = get_data_from_server(debug_container)
+        new_data = get_data_from_server(debug_container if 'debug_container' in locals() else None)
         if not new_data.empty:
             new_data = process_new_data(new_data)
             st.session_state['data'] = new_data
-            st.session_state['last_updated'] = datetime.now().strftime("%m월 %d일 %H시 %M분 %S초")
+            
+            # [수정] KST 적용
+            KST = pytz.timezone('Asia/Seoul')
+            now_kst = datetime.now(KST)
+            st.session_state['last_updated'] = now_kst.strftime("%m월 %d일 %H시 %M분 %S초")
+            
             st.rerun()
 
 # 데이터 표시
@@ -430,7 +438,10 @@ if not st.session_state['data'].empty:
 
     if sort_option == "기본순": df_valid = df_valid.sort_values(by="일련번호", ascending=True)
     elif sort_option == "투표율 높은 순": df_valid = df_valid.sort_values(by="투표율", ascending=False)
-    # ... (정렬 로직 동일)
+    elif sort_option == "투표율 낮은 순": df_valid = df_valid.sort_values(by="투표율", ascending=True)
+    elif sort_option == "투표자 많은 순": df_valid = df_valid.sort_values(by="투표자 수", ascending=False)
+    elif sort_option == "잔여 인원 적은 순": df_valid = df_valid.sort_values(by="투표 성사 잔여 인원", ascending=True)
+    elif sort_option == "가나다 순": df_valid = df_valid.sort_values(by="선거 단위", ascending=True)
 
     if not df_valid.empty:
         st.success(f"📊 현재 진행 중인 선거: {len(df_valid)}개")
@@ -445,9 +456,12 @@ if not st.session_state['data'].empty:
         df_export['비고'] = df_export['투표 성사 잔여 인원'].apply(lambda x: "(개표 가능)" if pd.notna(x) and x <= 0 else "")
         df_export = df_export.drop(columns=['투표자 수', '증가', '총 유권자', '투표 성사 잔여 인원'], errors='ignore')
 
-        file_name = f"yonsei_vote_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        # [수정] 엑셀 파일명 KST 적용
+        KST = pytz.timezone('Asia/Seoul')
+        file_name = f"yonsei_vote_{datetime.now(KST).strftime('%Y%m%d_%H%M%S')}.csv"
+        
         csv = df_export.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(label="💾 엑셀 저장", data=csv, file_name=file_name, mime='text/csv')
+        st.download_button(label="💾 엑셀 저장", data=csv, file_name=file_name, mime='text/csv', key='download_excel_btn')
         st.markdown(create_html_table(df_valid), unsafe_allow_html=True)
         
         with st.expander("📋 공지용 텍스트 복사 (클릭해서 열기)", expanded=False):
@@ -493,5 +507,6 @@ if auto_refresh:
         if not new_data.empty:
             new_data = process_new_data(new_data)
             st.session_state['data'] = new_data
-            st.session_state['last_updated'] = datetime.now().strftime("%m월 %d일 %H시 %M분 %S초")
+            KST = pytz.timezone('Asia/Seoul')
+            st.session_state['last_updated'] = datetime.now(KST).strftime("%m월 %d일 %H시 %M분 %S초")
             st.rerun()
