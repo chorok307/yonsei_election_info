@@ -504,7 +504,7 @@ if auto_refresh:
         if not new_data.empty:
             new_data = process_new_data(new_data)
             st.session_state['data'] = new_data
-            if should_fetch:
+if should_fetch:
     with st.spinner('데이터를 수집 중입니다...'):
         new_data = get_data_from_server()
         if not new_data.empty:
@@ -515,4 +515,5 @@ if auto_refresh:
             now_kst = get_kst_now()
             st.session_state['last_updated'] = now_kst.strftime("%m월 %d일 %H시 %M분 %S초")
             st.rerun()
+
 
