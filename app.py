@@ -196,29 +196,81 @@ if 'data' in st.session_state and not st.session_state['data'].empty:
 st.markdown("---")
 
 
+이 오류는 **Streamlit Cloud 서버에 설치된 크롬 브라우저 버전(v142)**과 **파이썬이 자동으로 다운로드하려는 드라이버 버전(v114)**이 서로 맞지 않아서 발생하는 버전 충돌 문제입니다.
+
+서버 환경(packages.txt로 설치된 환경)에서는 webdriver_manager가 버전을 잘 못 맞추는 경우가 많으므로, 서버에 이미 설치된 드라이버를 강제로 사용하도록 코드를 수정해야 합니다.
+
+아래 2가지 단계를 확인해 주세요.
+
+1. packages.txt 파일 확인 (GitHub)
+GitHub 저장소의 packages.txt 파일에 아래 두 줄이 정확히 들어있는지 다시 한번 확인해 주세요. 이 파일이 있어야 서버에 크롬이 설치됩니다.
+
+Plaintext
+
+chromium
+chromium-driver
+2. app.py 코드 수정 (드라이버 경로 강제 지정)
+app.py 파일의 get_data_from_server 함수 부분을 아래 코드로 통째로 교체해 주세요. 서버에 있는 /usr/bin/chromedriver를 직접 끌어다 쓰도록 수정했습니다.
+
+Python
+
+# ... (윗부분 import 문 등은 그대로 유지) ...
+
 def get_data_from_server():
     url = "https://election.yonsei.ac.kr/votes"
+    
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless")
+    # [서버용 필수 옵션]
+    options.add_argument("--headless") 
+    options.add_argument("--no-sandbox") 
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    
+    # 봇 탐지 우회
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_argument(
-        "user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-
+    # [핵심 수정] 서버에 설치된 Chromium과 Driver의 경로를 직접 지정하여 버전 충돌 방지
+    driver = None
+    try:
+        # 1. Streamlit Cloud (리눅스 서버) 환경 시도
+        # packages.txt로 설치하면 보통 이 경로에 있습니다.
+        if os.path.exists("/usr/bin/chromium") and os.path.exists("/usr/bin/chromedriver"):
+            options.binary_location = "/usr/bin/chromium"
+            service = Service("/usr/bin/chromedriver")
+            driver = webdriver.Chrome(service=service, options=options)
+        else:
+            # 2. 로컬(내 컴퓨터) 환경 시도
+            # 로컬에서는 webdriver_manager가 알아서 설치하게 둡니다.
+            # (이때 binary_location 설정을 비워야 로컬 크롬을 찾습니다)
+            options.binary_location = "" 
+            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+            
+    except Exception as e:
+        st.error(f"❌ 브라우저 실행 실패: {e}")
+        return pd.DataFrame()
+    
     try:
         driver.get(url)
         try:
-            WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "card-custom")))
+            # 로딩 대기
+            WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "card-custom")))
             time.sleep(1)
         except:
+            st.warning("⚠️ 페이지 로딩이 지연되고 있습니다.")
             pass
 
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
-
+        
         all_cards = soup.find_all('div', class_='card-custom')
+        
+        if not all_cards:
+            st.error("❌ 데이터를 찾을 수 없습니다. (접속 차단 또는 구조 변경)")
+            return pd.DataFrame()
+
         data_list = []
 
         for card in all_cards:
@@ -227,36 +279,25 @@ def get_data_from_server():
             prev_header = card.find_previous('h3')
             if prev_header and "진행중" in prev_header.get_text(strip=True):
                 raw_name = card.find('h4').get_text(strip=True)
-
+                
                 clean_name = re.sub(r"연세대학교|제\d+대", "", raw_name).strip()
-
-                if "총학생회" in clean_name:
-                    clean_name = "총학생회"
-                elif "총동아리연합회" in clean_name:
-                    clean_name = "총동아리연합회"
-                elif "외국인" in clean_name:
-                    clean_name = "외국인 학생회"
-                elif "아동" in clean_name and "가족" in clean_name:
-                    clean_name = "아동가족학과"
+                
+                if "총학생회" in clean_name: clean_name = "총학생회"
+                elif "총동아리연합회" in clean_name: clean_name = "총동아리연합회"
+                elif "외국인" in clean_name: clean_name = "외국인 학생회"
+                elif "아동" in clean_name and "가족" in clean_name: clean_name = "아동가족학과"
                 elif "상경·경영대학" in clean_name:
-                    if "총투표" in clean_name:
-                        pass
-                    else:
-                        clean_name = "상경·경영대학"
+                    if "총투표" in clean_name: pass 
+                    else: clean_name = "상경·경영대학" 
                 else:
                     remove_list = ["이과대학", "2026년도", "2026학년도", "선거운동본부", "학생회 선거", "학생회", "선거"]
-                    for word in remove_list:
-                        clean_name = clean_name.replace(word, "")
-
+                    for word in remove_list: clean_name = clean_name.replace(word, "")
                 clean_name = " ".join(clean_name.split())
-
-                # [수정] mapping_db에서 import한 함수 사용
+                
                 commission_name = get_commission(clean_name)
-                if commission_name == "기타/공통":
-                    commission_name = get_commission(raw_name)
+                if commission_name == "기타/공통": commission_name = get_commission(raw_name)
 
                 rate, voted, total, remaining = None, None, None, None
-
                 labels = card.find_all('p', class_='text-black-50')
                 for label in labels:
                     text = label.get_text(strip=True)
@@ -269,59 +310,45 @@ def get_data_from_server():
                                 try:
                                     rate = float(parts[0].replace('%', '').strip())
                                     voted = int(parts[1].replace('명', '').replace(')', '').replace(',', '').strip())
-                                except:
-                                    pass
+                                except: pass
                             else:
-                                try:
-                                    rate = float(val.replace('%', '').strip())
-                                except:
-                                    pass
+                                try: rate = float(val.replace('%', '').strip())
+                                except: pass
                         elif "총 유권자" in text:
-                            try:
-                                total = int(val.replace('명', '').replace(',', '').strip())
-                            except:
-                                pass
+                            try: total = int(val.replace('명', '').replace(',', '').strip())
+                            except: pass
                         elif "투표 성사" in text or "남은 투표" in text:
-                            try:
-                                remaining = int(val.replace('명', '').replace(',', '').strip())
-                            except:
-                                pass
-
+                            try: remaining = int(val.replace('명', '').replace(',', '').strip())
+                            except: pass
+                
                 data_list.append({
-                    "담당 선관위": commission_name,
-                    "선거 단위": clean_name,
-                    "투표율": rate,
-                    "투표자 수": voted,
-                    "총 유권자": total,
-                    "투표 성사 잔여 인원": remaining
+                    "담당 선관위": commission_name, "선거 단위": clean_name,
+                    "투표율": rate, "투표자 수": voted, "총 유권자": total, "투표 성사 잔여 인원": remaining
                 })
 
-                if clean_name == "외국인 학생회":
-                    break
-
+                if clean_name == "외국인 학생회": break
+        
         df = pd.DataFrame(data_list)
         if not df.empty:
             df['orig_index'] = df.index
-
             ORDER_LIST = [
                 "중앙선거관리위원회", "총동아리연합회", "문과대학", "상경·경영대학", "이과대학",
-                "공과대학", "인공지능융합대학",
-                "신과대학", "사회과학대학", "생명시스템대학", "음악대학",
-                "생활과학대학", "교육과학대학", "체육계열", "의과대학", "치과대학",
+                "공과대학", "인공지능융합대학", "신과대학", "사회과학대학", "생명시스템대학", "음악대학",
+                "생활과학대학", "교육과학대학", "체육계열", "의과대학", "치과대학", 
                 "간호대학", "약학대학", "언더우드국제대학", "글로벌인재대학"
             ]
             df['commission_order'] = pd.Categorical(df['담당 선관위'], categories=ORDER_LIST, ordered=True)
             df = df.sort_values(by=['commission_order', 'orig_index'])
-
             df = df.drop(columns=['orig_index', 'commission_order'])
             df.insert(0, '일련번호', range(1, len(df) + 1))
-
         return df
 
     except Exception as e:
+        st.error(f"❌ 크롤링 중 오류 발생: {e}")
         return pd.DataFrame()
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
 
 
 def process_new_data(new_df):
@@ -573,3 +600,4 @@ if auto_refresh:
             st.session_state['data'] = new_data
             st.session_state['last_updated'] = datetime.now().strftime("%m월 %d일 %H시 %M분 %S초")
             st.rerun()
+
