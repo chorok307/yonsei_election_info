@@ -4,6 +4,7 @@ import time
 import re
 import os
 import traceback
+import pytz
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -21,6 +22,10 @@ except ImportError:
     st.stop()
 
 st.set_page_config(page_title="연세대학교 선거 현황", layout="wide")
+
+def get_kst_now():
+    # UTC 시간을 가져온 뒤 한국 시간대(Asia/Seoul)로 변환
+    return datetime.now(pytz.timezone('Asia/Seoul'))
 
 # ==============================================================================
 # [UI 디자인] CSS
@@ -445,7 +450,13 @@ if not st.session_state['data'].empty:
         df_export['비고'] = df_export['투표 성사 잔여 인원'].apply(lambda x: "(개표 가능)" if pd.notna(x) and x <= 0 else "")
         df_export = df_export.drop(columns=['투표자 수', '증가', '총 유권자', '투표 성사 잔여 인원'], errors='ignore')
 
-        file_name = f"yonsei_vote_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        if not df_valid.empty:
+            st.success(f"📊 현재 진행 중인 선거: {len(df_valid)}개")
+            
+            # 여기서도 get_kst_now() 사용
+            file_name = f"yonsei_vote_{get_kst_now().strftime('%Y%m%d_%H%M%S')}.csv"
+        csv = df_export.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(label="💾 엑셀 저장", data=csv, file_name=file_name, mime='text/csv')
         csv = df_export.to_csv(index=False).encode('utf-8-sig')
         st.download_button(label="💾 엑셀 저장", data=csv, file_name=file_name, mime='text/csv')
         st.markdown(create_html_table(df_valid), unsafe_allow_html=True)
@@ -493,5 +504,15 @@ if auto_refresh:
         if not new_data.empty:
             new_data = process_new_data(new_data)
             st.session_state['data'] = new_data
-            st.session_state['last_updated'] = datetime.now().strftime("%m월 %d일 %H시 %M분 %S초")
+            if should_fetch:
+    with st.spinner('데이터를 수집 중입니다...'):
+        new_data = get_data_from_server()
+        if not new_data.empty:
+            new_data = process_new_data(new_data)
+            st.session_state['data'] = new_data
+            
+            # 여기서 get_kst_now() 사용
+            now_kst = get_kst_now()
+            st.session_state['last_updated'] = now_kst.strftime("%m월 %d일 %H시 %M분 %S초")
             st.rerun()
+
