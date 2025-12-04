@@ -1,5 +1,3 @@
-Python 3.12.3 (tags/v3.12.3:f6650f9, Apr  9 2024, 14:05:25) [MSC v.1938 64 bit (AMD64)] on win32
-Type "help", "copyright", "credits" or "license()" for more information.
 import streamlit as st
 import pandas as pd
 import time
@@ -470,3 +468,4 @@ if not st.session_state['data'].empty:
 ...             new_data = process_new_data(new_data)
 ...             st.session_state['data'] = new_data
 ...             st.session_state['last_updated'] = datetime.now().strftime("%m월 %d일 %H시 %M분 %S초")
+
