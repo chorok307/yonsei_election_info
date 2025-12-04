@@ -198,18 +198,45 @@ st.markdown("---")
 
 def get_data_from_server():
     url = "https://election.yonsei.ac.kr/votes"
+
     options = webdriver.ChromeOptions()
+    # [서버 환경 필수 옵션]
     options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+
+    # 봇 탐지 우회
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_argument(
-        "user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    # [핵심 수정] 서버에 설치된 Chromium과 Driver의 경로를 직접 지정
+    try:
+        # Streamlit Cloud의 Chromium 기본 설치 경로
+        options.binary_location = "/usr/bin/chromium"
+        service = Service("/usr/bin/chromedriver")
+
+        driver = webdriver.Chrome(service=service, options=options)
+    except Exception as e:
+        # 로컬(내 컴퓨터)에서 실행할 때를 대비한 예외 처리
+        try:
+            # 로컬에서는 기존 방식대로 시도
+            from webdriver_manager.chrome import ChromeDriverManager
+            # binary_location 설정 해제 (로컬 크롬 사용)
+            options.binary_location = ""
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
+        except Exception as e2:
+            print(f"Driver Init Error: {e}, {e2}")
+            return pd.DataFrame()
 
     try:
         driver.get(url)
         try:
+            # 로딩 대기
             WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "card-custom")))
             time.sleep(1)
         except:
@@ -250,7 +277,6 @@ def get_data_from_server():
 
                 clean_name = " ".join(clean_name.split())
 
-                # [수정] mapping_db에서 import한 함수 사용
                 commission_name = get_commission(clean_name)
                 if commission_name == "기타/공통":
                     commission_name = get_commission(raw_name)
@@ -319,10 +345,13 @@ def get_data_from_server():
         return df
 
     except Exception as e:
+        print(f"Crawling Error: {e}")
         return pd.DataFrame()
     finally:
-        driver.quit()
-
+        try:
+            driver.quit()
+        except:
+            pass
 
 def process_new_data(new_df):
     if 'data' in st.session_state and not st.session_state['data'].empty:
