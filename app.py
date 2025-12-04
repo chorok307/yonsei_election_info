@@ -193,28 +193,7 @@ if 'data' in st.session_state and not st.session_state['data'].empty:
         with col_summary:
             st.markdown(summary_html, unsafe_allow_html=True)
 
-st.markdown("---")
 
-
-이 오류는 **Streamlit Cloud 서버에 설치된 크롬 브라우저 버전(v142)**과 **파이썬이 자동으로 다운로드하려는 드라이버 버전(v114)**이 서로 맞지 않아서 발생하는 버전 충돌 문제입니다.
-
-서버 환경(packages.txt로 설치된 환경)에서는 webdriver_manager가 버전을 잘 못 맞추는 경우가 많으므로, 서버에 이미 설치된 드라이버를 강제로 사용하도록 코드를 수정해야 합니다.
-
-아래 2가지 단계를 확인해 주세요.
-
-1. packages.txt 파일 확인 (GitHub)
-GitHub 저장소의 packages.txt 파일에 아래 두 줄이 정확히 들어있는지 다시 한번 확인해 주세요. 이 파일이 있어야 서버에 크롬이 설치됩니다.
-
-Plaintext
-
-chromium
-chromium-driver
-2. app.py 코드 수정 (드라이버 경로 강제 지정)
-app.py 파일의 get_data_from_server 함수 부분을 아래 코드로 통째로 교체해 주세요. 서버에 있는 /usr/bin/chromedriver를 직접 끌어다 쓰도록 수정했습니다.
-
-Python
-
-# ... (윗부분 import 문 등은 그대로 유지) ...
 
 def get_data_from_server():
     url = "https://election.yonsei.ac.kr/votes"
@@ -600,4 +579,5 @@ if auto_refresh:
             st.session_state['data'] = new_data
             st.session_state['last_updated'] = datetime.now().strftime("%m월 %d일 %H시 %M분 %S초")
             st.rerun()
+
 
