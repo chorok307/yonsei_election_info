@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import time
 import re
+import os
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -579,5 +580,6 @@ if auto_refresh:
             st.session_state['data'] = new_data
             st.session_state['last_updated'] = datetime.now().strftime("%m월 %d일 %H시 %M분 %S초")
             st.rerun()
+
 
 
