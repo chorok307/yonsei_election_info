@@ -12,11 +12,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
-# [중요] mapping_db.py가 같은 폴더에 있어야 합니다.
+# [중요] mapping_db.py 확인
 try:
     from mapping_db import get_commission, is_target_unit, TARGET_UNITS
 except ImportError:
-    st.error("❌ 'mapping_db.py' 파일을 찾을 수 없습니다. 같은 폴더에 있는지 확인해주세요.")
+    st.error("❌ 'mapping_db.py' 파일이 없습니다. 같은 폴더에 파일을 생성해주세요.")
     st.stop()
 
 st.set_page_config(page_title="연세대학교 선거 현황", layout="wide")
@@ -31,65 +31,43 @@ def apply_custom_css():
             font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
         }
         
-        /* 메인 표 스타일 */
-        table.custom-table {
-            width: auto !important;
-            min-width: 50%; 
-            margin-left: auto;
-            margin-right: auto;
-            border-collapse: collapse;
-            font-size: 13px;
-            margin-bottom: 20px;
-            border: 1px solid #dee2e6;
+        /* Pandas Styler로 생성된 표 스타일 오버라이딩 */
+        table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            font-size: 13px !important;
+            margin-bottom: 20px !important;
+            border: 1px solid #dee2e6 !important;
+            text-align: center !important;
         }
-        table.custom-table th {
+        th {
             background-color: #003876 !important;
             color: #ffffff !important;
-            font-weight: bold;
-            padding: 10px 15px;
+            font-weight: bold !important;
             text-align: center !important;
-            border-bottom: 2px solid #002b5e;
-            white-space: nowrap;
+            padding: 10px !important;
+            border-bottom: 2px solid #002b5e !important;
         }
-        table.custom-table td {
-            padding: 8px 15px;
+        td {
+            padding: 8px !important;
             text-align: center !important;
-            border-bottom: 1px solid #dee2e6;
-            vertical-align: middle;
-            white-space: nowrap;
-            color: #333333;
+            border-bottom: 1px solid #dee2e6 !important;
+            vertical-align: middle !important;
+            color: #333333 !important;
         }
-        tr.success-row { background-color: #e3f9e5 !important; }
-        tr.warning-row { background-color: #fffbeb !important; }
-        tr.default-row { background-color: #ffffff; }
-        tr.default-row:hover { background-color: #f1f3f5; }
 
-        /* 상단 요약 표 스타일 */
+        /* 요약 표 스타일 */
         table.summary-table {
             width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-            margin-top: 10px;
             background-color: white;
             border: 2px solid #003876;
         }
-        table.summary-table th {
-            background-color: #003876;
-            color: white;
-            padding: 6px 4px;
-            text-align: center;
-            font-weight: bold;
-            white-space: nowrap;
-        }
         table.summary-table td {
-            padding: 6px 4px;
-            text-align: center;
+            color: #e11d48 !important; /* 붉은색 */
             font-weight: bold;
-            border-bottom: 1px solid #dee2e6;
-            color: #e11d48; 
         }
 
-        /* 컨트롤 패널 스타일 */
+        /* 컨트롤 패널 */
         .update-time-box {
             display: flex;
             align-items: center;
@@ -101,7 +79,6 @@ def apply_custom_css():
             color: #003876;
             font-weight: bold;
             font-size: 14px;
-            transform: translateY(-1px);
         }
         
         div.stButton > button {
@@ -110,25 +87,13 @@ def apply_custom_css():
             background-color: #003876 !important;
             border: 1px solid #003876 !important;
             border-radius: 8px !important;
-            margin-top: 2px;
-        }
-        div.stButton > button, div.stButton > button * {
             color: #ffffff !important;
             font-weight: bold !important;
         }
         div.stButton > button:hover {
             background-color: #00254d !important;
-            border-color: #00254d !important;
-        }
-        div.stButton > button:active {
-            background-color: #001833 !important;
         }
         
-        div[data-testid="stMarkdownContainer"] p {
-            font-weight: bold;
-            color: #333;
-            font-size: 14px;
-        }
         .target-highlight {
             color: #003876;
             font-weight: 900;
@@ -146,14 +111,10 @@ apply_custom_css()
 # ==============================================================================
 def get_data_from_server():
     url = "https://election.yonsei.ac.kr/votes"
-    
     options = webdriver.ChromeOptions()
     options.add_argument("--headless") 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -167,13 +128,13 @@ def get_data_from_server():
         else:
             driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     except Exception as e:
-        st.error(f"❌ 크롬 드라이버 실행 실패: {e}")
+        st.error(f"드라이버 실행 오류: {e}")
         return pd.DataFrame()
     
     try:
         driver.get(url)
         try:
-            WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "card-custom")))
+            WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "card-custom")))
             time.sleep(1)
         except:
             pass
@@ -182,6 +143,10 @@ def get_data_from_server():
         soup = BeautifulSoup(html, 'html.parser')
         
         all_cards = soup.find_all('div', class_='card-custom')
+        if not all_cards:
+            st.warning("선거 정보를 찾을 수 없습니다. (접속 차단 또는 페이지 구조 변경)")
+            return pd.DataFrame()
+
         data_list = []
 
         for card in all_cards:
@@ -238,8 +203,7 @@ def get_data_from_server():
                     "투표율": rate, "투표자 수": voted, "총 유권자": total, "투표 성사 잔여 인원": remaining
                 })
 
-                if clean_name == "외국인 학생회":
-                    break
+                if clean_name == "외국인 학생회": break
         
         df = pd.DataFrame(data_list)
         if not df.empty:
@@ -254,14 +218,14 @@ def get_data_from_server():
             df = df.sort_values(by=['commission_order', 'orig_index'])
             df = df.drop(columns=['orig_index', 'commission_order'])
             df.insert(0, '일련번호', range(1, len(df) + 1))
+            
         return df
 
     except Exception as e:
-        st.error(f"❌ 크롤링 오류: {e}")
+        st.error(f"크롤링 중 오류 발생: {e}")
         return pd.DataFrame()
     finally:
-        if driver:
-            driver.quit()
+        if driver: driver.quit()
 
 def process_new_data(new_df):
     if 'data' in st.session_state and not st.session_state['data'].empty:
@@ -275,44 +239,12 @@ def process_new_data(new_df):
                 if pd.notna(curr):
                     prev = old_map.get(unit)
                     diff = (curr - prev) if (prev is not None and pd.notna(prev)) else 0
-                else:
-                    diff = 0
+                else: diff = 0
                 diffs.append(diff)
             new_df['증가'] = diffs
         else: new_df['증가'] = 0
     else: new_df['증가'] = 0
     return new_df
-
-def create_html_table(df):
-    html = '<table class="custom-table"><thead><tr>'
-    for col in ['No.', '담당 선관위', '선거 단위', '투표율', '투표자 수', '증가', '총 유권자', '투표 성사 잔여 인원']:
-        html += f'<th>{col}</th>'
-    html += '</tr></thead><tbody>'
-    for _, row in df.iterrows():
-        remaining = row['투표 성사 잔여 인원']
-        voted = row['투표자 수']
-        diff = row.get('증가', 0)
-        row_class = "default-row"
-        if not pd.isna(remaining):
-            if remaining <= 0: row_class = "success-row"
-            elif not pd.isna(voted) and voted > 0 and remaining <= (voted * 0.2): row_class = "warning-row"
-        
-        diff_html = "-"
-        if diff > 0: diff_html = f'<span style="color: #e11d48; font-weight: bold;">▲ {int(diff):,}</span>'
-        
-        unit_display = row['선거 단위']
-        if is_target_unit(unit_display): unit_display = f'<span class="target-highlight">{unit_display}</span>'
-
-        html += f'<tr class="{row_class}">'
-        html += f"<td>{row['일련번호']}</td><td>{row['담당 선관위']}</td><td>{unit_display}</td>"
-        html += f"<td>{row['투표율']:.2f}%" if not pd.isna(row['투표율']) else "<td>-</td>"
-        html += f"<td>{int(row['투표자 수']):,}</td>" if not pd.isna(row['투표자 수']) else "<td>-</td>"
-        html += f"<td>{diff_html}</td>"
-        html += f"<td>{int(row['총 유권자']):,}</td>" if not pd.isna(row['총 유권자']) else "<td>-</td>"
-        html += f"<td>{int(remaining):,}</td>" if not pd.isna(remaining) else "<td>-</td>"
-        html += '</tr>'
-    html += '</tbody></table>'
-    return html
 
 # ==============================================================================
 # 메인 화면 레이아웃
@@ -320,10 +252,10 @@ def create_html_table(df):
 col_header, col_summary = st.columns([2, 1.2], vertical_alignment="center")
 with col_header: st.title("🦅 연세대학교 선거 실시간 현황")
 
-if 'data' not in st.session_state: st.session_state['data'] = pd.DataFrame()
 if 'last_updated' not in st.session_state: st.session_state['last_updated'] = "-"
+if 'data' not in st.session_state: st.session_state['data'] = pd.DataFrame()
 
-# 요약표 표시
+# --- 요약 표 표시 ---
 if not st.session_state['data'].empty:
     df_sum = st.session_state['data']
     if '증가' in df_sum.columns:
@@ -337,7 +269,8 @@ if not st.session_state['data'].empty:
         rem_total = max(0, row_total_sa['투표 성사 잔여 인원'].values[0]) if not row_total_sa.empty and pd.notna(row_total_sa['투표 성사 잔여 인원'].values[0]) else 0
         
         mask_target = df_sum['선거 단위'].apply(is_target_unit)
-        rem_target_sum = df_sum[mask_target]['투표 성사 잔여 인원'].apply(lambda x: max(0, x) if pd.notna(x) else 0).sum()
+        target_df = df_sum[mask_target]
+        rem_target_sum = target_df['투표 성사 잔여 인원'].apply(lambda x: max(0, x) if pd.notna(x) else 0).sum()
         value_val = rem_total - rem_target_sum
 
         summary_html = f"""
@@ -349,6 +282,7 @@ if not st.session_state['data'].empty:
 
 st.markdown("---")
 
+# --- 컨트롤 패널 ---
 col_toggle, col_btn, col_time = st.columns([1.5, 1.5, 3], vertical_alignment="bottom")
 with col_toggle:
     st.write(""); st.write("")
@@ -360,7 +294,7 @@ with col_time:
     time_text = st.session_state['last_updated']
     st.markdown(f'<div class="update-time-box">최근 업데이트: {time_text}</div>', unsafe_allow_html=True)
 
-# 갱신 로직
+# --- 데이터 갱신 로직 ---
 should_fetch = manual_refresh or (auto_refresh and st.session_state['data'].empty)
 if should_fetch:
     with st.spinner('데이터를 수집 중입니다...'):
@@ -370,23 +304,29 @@ if should_fetch:
             st.session_state['data'] = new_data
             st.session_state['last_updated'] = datetime.now().strftime("%m월 %d일 %H시 %M분 %S초")
             st.rerun()
+        else:
+            # 데이터 수집 실패 시 경고
+            st.warning("데이터를 가져오지 못했습니다. 잠시 후 다시 시도해주세요.")
 
-# 데이터 표시
+# --- 데이터 테이블 출력 ---
 if not st.session_state['data'].empty:
     df = st.session_state['data']
+    
     col_filter, col_sort = st.columns([3, 1])
     with col_filter:
         commission_list = sorted(df['담당 선관위'].unique().tolist())
-        selected_commissions = st.multiselect("🔍 담당 선관위 필터 (비워두면 전체 보기)", options=commission_list, default=[])
+        selected_commissions = st.multiselect("🔍 담당 선관위 필터", options=commission_list, default=[])
     with col_sort:
         sort_option = st.selectbox("🔽 정렬 기준", ["기본순", "투표율 높은 순", "투표율 낮은 순", "투표자 많은 순", "잔여 인원 적은 순", "가나다 순"])
 
     if selected_commissions: df_filtered = df[df['담당 선관위'].isin(selected_commissions)]
     else: df_filtered = df
 
+    # 유효/무효 데이터 분리
     df_valid = df_filtered[(df_filtered['총 유권자'].notna()) & (df_filtered['총 유권자'] > 0) & (df_filtered['투표 성사 잔여 인원'].notna())].copy()
     df_invalid = df_filtered[~((df_filtered['총 유권자'] > 0) & (df_filtered['투표 성사 잔여 인원'].notna()))].copy()
 
+    # 정렬
     if sort_option == "기본순": df_valid = df_valid.sort_values(by="일련번호", ascending=True)
     elif sort_option == "투표율 높은 순": df_valid = df_valid.sort_values(by="투표율", ascending=False)
     elif sort_option == "투표율 낮은 순": df_valid = df_valid.sort_values(by="투표율", ascending=True)
@@ -394,10 +334,11 @@ if not st.session_state['data'].empty:
     elif sort_option == "잔여 인원 적은 순": df_valid = df_valid.sort_values(by="투표 성사 잔여 인원", ascending=True)
     elif sort_option == "가나다 순": df_valid = df_valid.sort_values(by="선거 단위", ascending=True)
 
+    # 1. 메인 표 (유효 데이터)
     if not df_valid.empty:
         st.success(f"📊 현재 진행 중인 선거: {len(df_valid)}개")
         
-        # 엑셀 저장 로직
+        # 엑셀 다운로드용 데이터 준비
         df_export = df_valid.copy()
         def restore_name_for_excel(name):
             skip = ["동아리연합회", "투표", "위원회", "연합회장"]
@@ -407,64 +348,75 @@ if not st.session_state['data'].empty:
         df_export['투표율'] = df_export['투표율'].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "-")
         df_export['비고'] = df_export['투표 성사 잔여 인원'].apply(lambda x: "(개표 가능)" if pd.notna(x) and x <= 0 else "")
         df_export = df_export.drop(columns=['투표자 수', '증가', '총 유권자', '투표 성사 잔여 인원'], errors='ignore')
-
-        file_name = f"yonsei_vote_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        csv = df_export.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(label="💾 엑셀 저장", data=csv, file_name=file_name, mime='text/csv')
-        st.markdown(create_html_table(df_valid), unsafe_allow_html=True)
         
-        with st.expander("📋 공지용 텍스트 복사 (클릭해서 열기)", expanded=False):
+        csv = df_export.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(label="💾 엑셀 저장", data=csv, file_name=f"yonsei_vote_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", mime='text/csv')
+
+        # HTML 표 생성 (Pandas Styler 사용 - 가장 안정적)
+        def color_rows(row):
+            remaining = row['투표 성사 잔여 인원']
+            voted = row['투표자 수']
+            styles = [''] * len(row)
+            if pd.notna(remaining):
+                if remaining <= 0:
+                    styles = ['background-color: #d1fae5; color: #065f46; font-weight: bold'] * len(row)
+                elif pd.notna(voted) and voted > 0 and remaining <= (voted * 0.2):
+                    styles = ['background-color: #fef9c3; color: #854d0e; font-weight: bold'] * len(row)
+            return styles
+
+        # 화면 표시용 데이터 가공
+        df_display = df_valid.copy()
+        df_display['선거 단위'] = df_display['선거 단위'].apply(lambda x: f'<span class="target-highlight">{x}</span>' if is_target_unit(x) else x)
+        df_display['투표율'] = df_display['투표율'].apply(lambda x: f"{x:.2f}%" if pd.notna(x) else "-")
+        for col in ['투표자 수', '총 유권자', '투표 성사 잔여 인원']:
+            df_display[col] = df_display[col].apply(lambda x: f"{int(x):,}" if pd.notna(x) else "-")
+        df_display['증가'] = df_display['증가'].apply(lambda x: f'<span style="color: #e11d48; font-weight: bold;">▲ {int(x):,}</span>' if x > 0 else "-")
+
+        # Styler 적용 및 HTML 변환
+        styler = df_display.style.apply(color_rows, axis=1).hide(axis='index')
+        st.markdown(styler.to_html(escape=False), unsafe_allow_html=True)
+        
+        # 공지 텍스트
+        with st.expander("📋 공지용 텍스트 복사", expanded=False):
             clipboard_text = ""
             ORDERED_COMMISSIONS = [
                 "중앙선거관리위원회", "총동아리연합회", "문과대학", "상경·경영대학", "이과대학",
-                "공과대학", "인공지능융합대학", 
-                "신과대학", "사회과학대학", "생명시스템대학", "음악대학",
+                "공과대학", "인공지능융합대학", "신과대학", "사회과학대학", "생명시스템대학", "음악대학",
                 "생활과학대학", "교육과학대학", "체육계열", "의과대학", "치과대학", 
                 "간호대학", "약학대학", "언더우드국제대학", "글로벌인재대학"
             ]
-            found_commissions = df_valid['담당 선관위'].unique().tolist()
-            sorted_commissions = [c for c in ORDERED_COMMISSIONS if c in found_commissions]
-            extras = [c for c in found_commissions if c not in ORDERED_COMMISSIONS]
-            sorted_commissions.extend(extras)
-
-            for comm in sorted_commissions:
+            found = df_valid['담당 선관위'].unique().tolist()
+            sorted_comm = [c for c in ORDERED_COMMISSIONS if c in found] + [c for c in found if c not in ORDERED_COMMISSIONS]
+            
+            for comm in sorted_comm:
                 group = df_valid[df_valid['담당 선관위'] == comm]
                 if group.empty: continue
                 for _, row in group.iterrows():
-                    unit_name = row['선거 단위']
-                    rate = row['투표율'] if pd.notna(row['투표율']) else 0.0
-                    skip_keywords = ["학생회", "위원회", "투표", "동아리연합회", "연합회장"]
-                    if any(k in unit_name for k in skip_keywords): final_name = unit_name
-                    else: final_name = f"{unit_name} 학생회"
-                    clipboard_text += f"{final_name} {rate:.2f}%\n"
-                clipboard_text += "\n" 
-            st.info("우측 상단의 'Copy' 아이콘을 누르면 전체 내용이 복사됩니다.")
+                    unit = row['선거 단위']
+                    # 태그 제거 (하이라이트용 span 태그가 있을 수 있음)
+                    unit_clean = re.sub(r'<[^>]+>', '', unit) 
+                    
+                    skip = ["학생회", "위원회", "투표", "동아리연합회", "연합회장"]
+                    final_name = unit_clean if any(k in unit_clean for k in skip) else f"{unit_clean} 학생회"
+                    rate_val = row['투표율'].replace('%', '')
+                    clipboard_text += f"{final_name} {rate_val}%\n"
+                clipboard_text += "\n"
             st.code(clipboard_text, language="text")
 
+    # 2. 미표기 데이터
     if not df_invalid.empty:
         st.markdown("---")
         st.subheader("📌 일부 정보 미표기 단위")
-        def safe_format_int(val):
-            try: return f"{int(val):,}"
-            except: return val
-        def safe_format_float(val):
-            try: return f"{float(val):.2f}%"
-            except: return val
+        df_inv_disp = df_invalid.fillna("-").copy()
+        # 포맷팅
+        df_inv_disp['투표율'] = df_inv_disp['투표율'].apply(lambda x: f"{x:.2f}%" if x != '-' else '-')
+        for col in ['투표자 수', '총 유권자', '투표 성사 잔여 인원']:
+            df_inv_disp[col] = df_inv_disp[col].apply(lambda x: f"{int(x):,}" if x != '-' else '-')
+        
+        st.markdown(df_inv_disp.style.hide(axis='index').to_html(), unsafe_allow_html=True)
 
-        df_show = df_invalid.fillna("-")
-        df_show['투표자 수'] = df_show['투표자 수'].apply(lambda x: safe_format_int(x) if x != '-' else '-')
-        df_show['총 유권자'] = df_show['총 유권자'].apply(lambda x: safe_format_int(x) if x != '-' else '-')
-        df_show['투표 성사 잔여 인원'] = df_show['투표 성사 잔여 인원'].apply(lambda x: safe_format_int(x) if x != '-' else '-')
-        df_show['투표율'] = df_show['투표율'].apply(lambda x: safe_format_float(x) if x != '-' else '-')
 
-        styler_invalid = df_show.style.set_properties(**{'text-align': 'center'}).set_table_styles(
-            [{'selector': 'th', 'props': [('text-align', 'center')]}]
-        )
-        st.dataframe(styler_invalid, use_container_width=True, hide_index=True)
-
-elif st.session_state['last_updated'] != "-":
-    st.warning("데이터를 찾지 못했습니다. 다시 시도해주세요.")
-
+# 자동 업데이트
 if auto_refresh:
     progress_text = "다음 업데이트 대기 중..."
     my_bar = st.progress(0, text=progress_text)
